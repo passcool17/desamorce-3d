@@ -1,0 +1,72 @@
+// Partie complète de Désamorce! 3D dans Chrome headless (WebGL SwiftShader) via CDP, sans dépendance.
+// Les touches sont de vrais clics souris projetés depuis la face 3D (raycast réel).
+// Usage : node test/e2e-cdp.mjs <url> [dossier-captures]
+import { spawn } from 'node:child_process';
+import { writeFileSync, mkdtempSync } from 'node:fs';
+const url = process.argv[2], shots = process.argv[3] || '/tmp';
+const VW = 390, VH = 844;
+const chrome = spawn('google-chrome', ['--headless=new', '--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--remote-debugging-port=9334', '--user-data-dir=' + mkdtempSync('/tmp/chr-'), 'about:blank'], { stdio: 'ignore' });
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let ws, id = 0; const pend = new Map(); const errors = [];
+const send = (method, params = {}) => new Promise(r => { const i = ++id; pend.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+const ev = async e => { const r = await send('Runtime.evaluate', { expression: e, returnByValue: true }); if (r.result?.exceptionDetails) throw new Error(e + ' → ' + r.result.exceptionDetails.exception?.description); return r.result?.result?.value; };
+const mouse = (type, x, y) => send('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 });
+async function click(x, y) { await mouse('mouseMoved', x, y); await mouse('mousePressed', x, y); await mouse('mouseReleased', x, y); await sleep(140); }
+async function tapFace(f, cx, cy) { const [x, y] = await ev(`D3.toScreen(${f},${cx},${cy})`); await click(x, y); }
+async function settle() { for (let i = 0; i < 40 && !(await ev('D3.settled()')); i++) await sleep(50); await sleep(80); }
+async function swipe(dx) { const y = 420, x0 = VW / 2; await mouse('mouseMoved', x0, y); await mouse('mousePressed', x0, y); for (let k = 1; k <= 8; k++) { await mouse('mouseMoved', x0 + dx * k / 8, y); await sleep(16); } await mouse('mouseReleased', x0 + dx, y); await settle(); }
+async function shot(n) { const r = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(`${shots}/${n}.png`, Buffer.from(r.result.data, 'base64')); }
+const nextBtn = async () => { await click(VW - 56, VH - 50); await settle(); };
+const st = () => ev(`({face:D3.G.face,strikes:D3.G.strikes,solved:D3.G.solved,rem:Math.round(D3.G.remaining/1000),over:D3.G.over,won:!!D3.G.won,end:!document.getElementById('end').classList.contains('hidden')})`);
+try {
+  for (let i = 0; i < 50; i++) { try { const l = await (await fetch('http://127.0.0.1:9334/json')).json(); const t = l.find(x => x.type === 'page'); if (t) { ws = new WebSocket(t.webSocketDebuggerUrl); break; } } catch {} await sleep(200); }
+  await new Promise(r => ws.onopen = r);
+  ws.onmessage = m => { const d = JSON.parse(m.data); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } if (d.method === 'Runtime.exceptionThrown') errors.push(d.params.exceptionDetails.exception?.description || d.params.exceptionDetails.text); if (d.method === 'Log.entryAdded' && d.params.entry.level === 'error') errors.push(d.params.entry.text + ' ' + (d.params.entry.url || '')); };
+  await send('Runtime.enable'); await send('Log.enable'); await send('Page.enable');
+  await send('Emulation.setDeviceMetricsOverride', { width: VW, height: VH, deviceScaleFactor: 1, mobile: false });
+  await send('Page.navigate', { url });
+  for (let i = 0; i < 60 && !(await ev('!!window.D3')); i++) await sleep(200);
+  console.log('WebGL :', await ev(`(()=>{const g=document.createElement('canvas').getContext('webgl2')||document.createElement('canvas').getContext('webgl');return !!g})()`));
+  await sleep(400); await shot('01-titre');
+  await ev(`document.getElementById('start').click()`); await sleep(500);
+  const p = await ev('D3.G.p');
+  console.log('série', p.serial, '| code', p.solution.code, '| vis', p.solution.screwOrder.join(''), '| fils à couper', p.solution.wiresToCut.join(','));
+  await shot('02-fils');
+  const wrong = p.wires.findIndex((_, i) => !p.solution.wiresToCut.includes(i));
+  await tapFace(0, 200, 160 + wrong * 60);
+  let s = await st(); console.log('mauvais fil → erreurs', s.strikes, '| temps', s.rem, 's');
+  if (s.strikes !== 1) throw new Error('pénalité non appliquée');
+  for (const i of p.solution.wiresToCut) await tapFace(0, 200, 160 + i * 60);
+  // tourner par glissement (gauche = face suivante)
+  await swipe(-160); s = await st(); console.log('glissement gauche → face', s.face + 1);
+  if (s.face !== 1) throw new Error('glissement inopérant');
+  await sleep(200); await shot('03-clavier');
+  await nextBtn(); await shot('04-panneau');
+  const SC = await ev('D3.SCREWS');
+  for (const n of p.solution.screwOrder) { await tapFace(2, ...SC[n - 1]); await sleep(120); }
+  await sleep(1400); await shot('05-panneau-ouvert');
+  await nextBtn();
+  const PAD = await ev('D3.PAD');
+  for (const d of p.solution.mazePath) { const [x, y, w, h] = PAD[d]; await tapFace(3, x + w / 2, y + h / 2); }
+  await sleep(500); await shot('06-aiguille');
+  s = await st(); console.log('résolus avant le code', JSON.stringify(s.solved));
+  await nextBtn(); await nextBtn();
+  const KR = await ev('[...Array(12).keys()].map(D3.keyRect)');
+  const keyAt = async i => { const [x, y, w, h] = KR[i]; await tapFace(1, x + w / 2, y + h / 2); };
+  for (const ch of p.solution.code) await keyAt(+ch === 0 ? 10 : +ch - 1);
+  await sleep(200); await shot('07-code');
+  await keyAt(11); await sleep(1600);
+  s = await st(); await shot('08-victoire');
+  console.log('victoire :', s.won, '| écran fin :', s.end, '| temps restant', s.rem, 's');
+  if (!s.won || !s.end) throw new Error('victoire non atteinte');
+  await ev(`document.getElementById('again').click()`); await sleep(500);
+  const p2 = await ev('D3.G.p');
+  const bad = p2.wires.map((_, i) => i).filter(i => !p2.solution.wiresToCut.includes(i));
+  for (const i of bad.slice(0, 3)) await tapFace(0, 200, 160 + i * 60);
+  await sleep(350); await shot('09-explosion'); await sleep(1100); await shot('10-boum');
+  s = await st(); console.log('défaite après 3 erreurs :', s.over && !s.won && s.end, '| nouvelle bombe :', p2.serial !== p.serial || p2.wires.join() !== p.wires.join());
+  if (!(s.over && !s.won && s.end)) throw new Error('défaite non déclenchée');
+  console.log('erreurs JS :', errors.length ? errors : 'aucune');
+  if (errors.length) process.exitCode = 1;
+} catch (e) { console.error('ÉCHEC', e.message, errors); process.exitCode = 1; }
+finally { chrome.kill(); }
