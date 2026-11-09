@@ -16,6 +16,7 @@ async function tapFace(f, cx, cy) { const [x, y] = await ev(`D3.toScreen(${f},${
 async function settle() { for (let i = 0; i < 40 && !(await ev('D3.settled()')); i++) await sleep(50); await sleep(80); }
 async function swipe(dx) { const y = 420, x0 = VW / 2; await mouse('mouseMoved', x0, y); await mouse('mousePressed', x0, y); for (let k = 1; k <= 8; k++) { await mouse('mouseMoved', x0 + dx * k / 8, y); await sleep(16); } await mouse('mouseReleased', x0 + dx, y); await settle(); }
 async function shot(n) { const r = await send('Page.captureScreenshot', { format: 'png' }); writeFileSync(`${shots}/${n}.png`, Buffer.from(r.result.data, 'base64')); }
+async function waitCine(f) { for (let i = 0; i < 400; i++) { const c = await ev('D3.cine()'); if (!c || f(c)) return c; await sleep(15); } }
 const nextBtn = async () => { await click(VW - 56, VH - 50); await settle(); };
 const st = () => ev(`({face:D3.G.face,strikes:D3.G.strikes,solved:D3.G.solved,rem:Math.round(D3.G.remaining/1000),over:D3.G.over,won:!!D3.G.won,end:!document.getElementById('end').classList.contains('hidden')})`);
 try {
@@ -55,17 +56,42 @@ try {
   const keyAt = async i => { const [x, y, w, h] = KR[i]; await tapFace(1, x + w / 2, y + h / 2); };
   for (const ch of p.solution.code) await keyAt(+ch === 0 ? 10 : +ch - 1);
   await sleep(200); await shot('07-code');
-  await keyAt(11); await sleep(1600);
+  await keyAt(11);
+  console.log('cinématique victoire :', JSON.stringify(await ev('D3.cine()')));
+  await waitCine(c => c.t > 1000); await shot('08a-win-1s'); await waitCine(c => c.t > 2300); await shot('epic-win'); await waitCine(c => c.t > 3400); await shot('08b-win-3s');
+  for (let i = 0; i < 40 && !(await st()).end; i++) await sleep(150);
+  await sleep(1300);
   s = await st(); await shot('08-victoire');
+  console.log('étoiles :', await ev(`document.querySelectorAll('#stars span.on').length`), '| record :', await ev(`document.getElementById('best').textContent`));
   console.log('victoire :', s.won, '| écran fin :', s.end, '| temps restant', s.rem, 's');
   if (!s.won || !s.end) throw new Error('victoire non atteinte');
   await ev(`document.getElementById('again').click()`); await sleep(500);
   const p2 = await ev('D3.G.p');
   const bad = p2.wires.map((_, i) => i).filter(i => !p2.solution.wiresToCut.includes(i));
   for (const i of bad.slice(0, 3)) await tapFace(0, 200, 160 + i * 60);
-  await sleep(350); await shot('09-explosion'); await sleep(1100); await shot('10-boum');
+  const tLose = Date.now();
+  await waitCine(c => c.t > 800); await shot('09a-avant-boum'); await waitCine(c => c.tx > 280); await shot('epic-boum'); await waitCine(c => c.tx > 1100); await shot('09b-apres-boum');
+  for (let i = 0; i < 50 && !(await st()).end; i++) await sleep(150);
+  console.log('BOUM → écran de résultat après', ((Date.now() - tLose) / 1000).toFixed(1), 's');
+  await sleep(900); await shot('10-boum');
   s = await st(); console.log('défaite après 3 erreurs :', s.over && !s.won && s.end, '| nouvelle bombe :', p2.serial !== p.serial || p2.wires.join() !== p.wires.join());
   if (!(s.over && !s.won && s.end)) throw new Error('défaite non déclenchée');
+  // passer la cinématique d'un toucher
+  await ev(`document.getElementById('again').click()`); await sleep(500);
+  const p3 = await ev('D3.G.p'); const bad3 = p3.wires.map((_, i) => i).filter(i => !p3.solution.wiresToCut.includes(i));
+  for (const i of bad3.slice(0, 3)) await tapFace(0, 200, 160 + i * 60);
+  await waitCine(c => c.t > 450); await click(VW / 2, VH / 2); await sleep(150);
+  s = await st(); console.log('toucher pour passer → écran de résultat immédiat :', s.end);
+  if (!s.end) throw new Error('passer inopérant');
+  // mouvement réduit
+  await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  await send('Page.reload'); for (let i = 0; i < 60 && !(await ev('!!window.D3')); i++) await sleep(200); await sleep(400);
+  await ev(`document.getElementById('start').click()`); await sleep(500);
+  const p4 = await ev('D3.G.p'); const bad4 = p4.wires.map((_, i) => i).filter(i => !p4.solution.wiresToCut.includes(i));
+  const t4 = Date.now(); for (const i of bad4.slice(0, 3)) await tapFace(0, 200, 160 + i * 60);
+  await sleep(900); await shot('11-reduit-boum');
+  for (let i = 0; i < 50 && !(await st()).end; i++) await sleep(150);
+  console.log('mouvement réduit : BOUM → résultat après', ((Date.now() - t4) / 1000).toFixed(1), 's');
   console.log('erreurs JS :', errors.length ? errors : 'aucune');
   if (errors.length) process.exitCode = 1;
 } catch (e) { console.error('ÉCHEC', e.message, errors); process.exitCode = 1; }

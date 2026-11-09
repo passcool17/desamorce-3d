@@ -30,3 +30,32 @@ button.big { background: #b71c1c; border-color: #ff8a80; font-size: 26px; width:
 #end.lose { background: rgba(0,0,0,.55); } #end.lose h1 { font-size: 92px; color: #ff3d00; -webkit-text-stroke: 3px #ffeb3b; }
 #endTime { font: bold 60px "Courier New", monospace; }
 #home { width: 200px; height: 52px; }
+
+/* ---- Cinématiques ---- */
+#fx > * { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; opacity: 0; }
+#vignette { background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(150,0,0,.55) 70%, rgba(60,0,0,.95) 100%); transition: opacity .3s; }
+#flash { background: #fff; }
+#cracks { transition: opacity .2s; }
+#skip { position: fixed; inset: 0; display: flex; align-items: flex-end; justify-content: center; padding-bottom: max(26px, env(safe-area-inset-bottom)); z-index: 5; }
+#skip span { color: rgba(255,255,255,.65); font-size: 14px; background: rgba(0,0,0,.35); padding: 6px 14px; border-radius: 20px; }
+#timer.frozen { color: #00e676; text-shadow: 0 0 14px #00e676; border-color: #00e676; animation: blink .6s steps(2) infinite; }
+#end { z-index: 6; }
+#end.lose { background: radial-gradient(ellipse at center, rgba(40,0,0,.35), rgba(0,0,0,.75)); }
+#end.win { background: radial-gradient(ellipse at center, rgba(60,40,0,.35), rgba(5,20,8,.82)); }
+#end.lose h1 { animation: slam .5s cubic-bezier(.2,1.6,.4,1) both; font-size: 104px; }
+#end.lose { animation: quake .5s .25s both; }
+#end.win h1 { animation: rise .7s cubic-bezier(.2,1.4,.4,1) both; text-shadow: 0 0 24px rgba(105,240,174,.6); }
+#end.win #endTime { color: #ffe082; text-shadow: 0 0 18px rgba(255,200,80,.6); }
+#stars { font-size: 52px; letter-spacing: 8px; min-height: 0; }
+#stars span { color: #3a3f48; display: inline-block; animation: pop .45s cubic-bezier(.2,1.8,.4,1) both; }
+#stars span.on { color: #ffd54f; text-shadow: 0 0 16px rgba(255,213,79,.8); }
+#best { margin: 0; color: #ffe082; font-size: 15px; } #best b { font-size: 18px; color: #fff; }
+#endInfo { margin: 0; line-height: 1.5; }
+@keyframes slam { 0% { transform: scale(3.2) rotate(-6deg); opacity: 0; } 55% { transform: scale(.88) rotate(2deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
+@keyframes quake { 0%,100% { transform: translate(0,0); } 20% { transform: translate(-12px,6px); } 40% { transform: translate(10px,-8px); } 60% { transform: translate(-6px,4px); } 80% { transform: translate(4px,-2px); } }
+@keyframes rise { 0% { transform: translateY(40px) scale(.7); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes pop { 0% { transform: scale(0) rotate(-90deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  #end.lose, #end.lose h1, #end.win h1, #stars span { animation: none; }
+  #timer.frozen, #timer.urgent { animation: none; }
+}
