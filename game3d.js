@@ -14,9 +14,102 @@
   // ---------- Son ----------
   const Sfx = {
     ctx: null,
+    muted: (() => { try { return localStorage.getItem('desamorce3d.muet') === '1'; } catch (e) { return false; } })(),
     init() {
       if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
-      try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { this.ctx = null; }
+      try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { this.ctx = null; return; }
+      const c = this.ctx;
+      // chaîne maître : volume → passe-bas 4 kHz (rien de perçant) → compresseur/limiteur
+      this.master = c.createGain(); this.master.gain.value = this.muted ? 0 : 0.8;
+      const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 4000; lp.Q.value = 0.5;
+      const comp = c.createDynamicsCompressor();
+      comp.threshold.value = -20; comp.knee.value = 12; comp.ratio.value = 8; comp.attack.value = 0.003; comp.release.value = 0.25;
+      this.master.connect(lp).connect(comp).connect(c.destination);
+      this.out = this.master;
+      this.noiseBuf = c.createBuffer(1, c.sampleRate, c.sampleRate);
+      const d = this.noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    },
+    setMuted(m) {
+      this.muted = m; try { localStorage.setItem('desamorce3d.muet', m ? '1' : '0'); } catch (e) {}
+      if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.8, this.ctx.currentTime, 0.05);
+    },
+
+    // ----- Nappe de tension adaptative -----
+    bed: null,
+    bedStart(state) {
+      const c = this.ctx; if (!c) return; this.state = state;
+      if (this.bed) { this.bed.gain.gain.cancelScheduledValues(c.currentTime); this.bed.gain.gain.setTargetAtTime(0.5, c.currentTime, 0.4); this.resetClock(); return; }
+      const gain = c.createGain(); gain.gain.value = 0; gain.connect(this.out);
+      const duck = c.createGain(); duck.gain.value = 1; duck.connect(gain);
+      const filt = c.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 220; filt.Q.value = 3; filt.connect(duck);
+      const oscs = [[55, 'sawtooth', 0.2, -7], [55, 'sawtooth', 0.2, 7], [82.4, 'sine', 0.12, 0], [27.5, 'sine', 0.35, 0]].map(([f, type, v, det]) => {
+        const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.value = f; o.detune.value = det; g.gain.value = v;
+        o.connect(g).connect(filt); o.start(); return o;
+      });
+      // lent battement de volume (respiration)
+      const lfo = c.createOscillator(), lfoG = c.createGain(); lfo.frequency.value = 0.13; lfoG.gain.value = 0.08; lfo.connect(lfoG).connect(gain.gain); lfo.start();
+      this.bed = { gain, duck, filt, oscs, lfo };
+      gain.gain.setTargetAtTime(0.5, c.currentTime, 0.8);
+      this.resetClock();
+      this.sched = setInterval(() => this.schedule(), 25);
+    },
+    resetClock() { const t = this.ctx.currentTime + 0.1; this.nextKick = t; this.nextTick = t; this.riser = null; this.calm = 0; this.boost = 0; },
+    bedStop(fast) {
+      const c = this.ctx; if (!c || !this.bed) return;
+      this.bed.gain.gain.cancelScheduledValues(c.currentTime);
+      this.bed.gain.gain.setTargetAtTime(0, c.currentTime, fast ? 0.03 : 0.3);
+      if (this.riser) { this.riser.g.gain.cancelScheduledValues(c.currentTime); this.riser.g.gain.setTargetAtTime(0, c.currentTime, 0.05); this.riser = null; }
+      this.state = null;
+    },
+    tension() { // 0 calme … 1 panique
+      const st = this.state && this.state(); if (!st) return 0;
+      const base = 1 - Math.max(0, st.remaining) / START_MS;
+      const t = this.ctx.currentTime;
+      const boost = Math.max(0, this.boost - t) / 4 * 0.3;   // après une erreur
+      const calm = Math.max(0, this.calm - t) / 3 * 0.2;     // après un module
+      return Math.min(1, Math.max(0, Math.pow(base, 1.3) * 0.85 + st.strikes * 0.08 + boost - calm + (st.final ? 1 : 0)));
+    },
+    schedule() {
+      const c = this.ctx, st = this.state && this.state(); if (!c || !this.bed || !st) return;
+      const T = this.tension(), now = c.currentTime, ahead = now + 0.12;
+      this.bed.filt.frequency.setTargetAtTime(220 + 900 * T * T, now, 0.3);
+      this.bed.oscs[0].detune.setTargetAtTime(-7 - 18 * T, now, 0.5); this.bed.oscs[1].detune.setTargetAtTime(7 + 18 * T, now, 0.5);
+      // pulsation sourde (genre battement de cœur)
+      const bpm = 52 + 78 * T;
+      while (this.nextKick < ahead) { this.kick(this.nextKick, 0.25 + 0.3 * T); this.kick(this.nextKick + 0.17, 0.12 + 0.18 * T); this.nextKick += 60 / bpm; }
+      // tic-tac boisé : 1/s, 2/s sous 1:00, 3/s sous 0:30
+      if (st.running) {
+        const r = st.remaining, step = r < 30000 ? 1 / 3 : r < 60000 ? 0.5 : 1;
+        while (this.nextTick < ahead) { this.woodTick(this.nextTick, r < 30000 ? 0.05 : 0.06); this.nextTick += step; }
+        // montée subtile dans les 15 dernières secondes
+        if (r < 15000 && r > 0 && !this.riser) this.startRiser(r / 1000);
+      } else this.nextTick = ahead;
+    },
+    kick(t, v) {
+      const c = this.ctx, o = c.createOscillator(), g = c.createGain(), f = c.createBiquadFilter();
+      f.type = 'lowpass'; f.frequency.value = 180;
+      o.type = 'sine'; o.frequency.setValueAtTime(75, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.16);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+      o.connect(f).connect(g).connect(this.bed.duck); o.start(t); o.stop(t + 0.25);
+    },
+    woodTick(t, v) {
+      const c = this.ctx, n = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+      n.buffer = this.noiseBuf; f.type = 'bandpass'; f.frequency.value = 1100 + Math.random() * 120; f.Q.value = 9;
+      g.gain.setValueAtTime(v * 3, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.035);
+      n.connect(f).connect(g).connect(this.out); n.start(t, Math.random() * 0.5, 0.05);
+    },
+    startRiser(sec) {
+      const c = this.ctx, t = c.currentTime, o = c.createOscillator(), o2 = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain();
+      o.type = 'sawtooth'; o2.type = 'sawtooth'; o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(330, t + sec);
+      o2.frequency.setValueAtTime(111.5, t); o2.frequency.exponentialRampToValueAtTime(336, t + sec);
+      f.type = 'lowpass'; f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(1600, t + sec); f.Q.value = 2;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05, t + sec);
+      o.connect(f); o2.connect(f); f.connect(g).connect(this.bed.duck); o.start(t); o2.start(t); o.stop(t + sec + 0.5); o2.stop(t + sec + 0.5);
+      this.riser = { g };
+    },
+    duckBed(depth, sec) {
+      if (!this.bed) return; const c = this.ctx, d = this.bed.duck.gain, t = c.currentTime;
+      d.cancelScheduledValues(t); d.setValueAtTime(d.value, t); d.linearRampToValueAtTime(depth, t + 0.04); d.setTargetAtTime(1, t + 0.15, sec / 3);
     },
     tone(freq, dur, type = 'square', vol = 0.06, slide = 0) {
       const c = this.ctx; if (!c) return;
@@ -25,12 +118,29 @@
       if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), c.currentTime + dur);
       g.gain.setValueAtTime(vol, c.currentTime);
       g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + dur);
-      o.connect(g).connect(c.destination); o.start(); o.stop(c.currentTime + dur + 0.02);
+      o.connect(g).connect(this.out); o.start(); o.stop(c.currentTime + dur + 0.02);
     },
-    tick(fast) { this.tone(fast ? 1400 : 1000, 0.03, 'square', 0.035); },
+
     click() { this.tone(600, 0.04, 'triangle', 0.08); },
-    good() { this.tone(880, 0.09, 'sine', 0.1); setTimeout(() => this.tone(1320, 0.12, 'sine', 0.1), 90); },
-    bad() { this.tone(160, 0.35, 'sawtooth', 0.12, -80); },
+    good() { // carillon de soulagement + nappe qui se calme
+      const c = this.ctx; if (!c) return; const t = c.currentTime;
+      [[659, 0], [988, 0.09], [1319, 0.18]].forEach(([f, d]) => {
+        const o = c.createOscillator(), g = c.createGain(); o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.08, t + d + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.9);
+        o.connect(g).connect(this.out); o.start(t + d); o.stop(t + d + 1);
+      });
+      this.calm = t + 3; this.duckBed(0.55, 1.5);
+    },
+    bad() { // piqûre dissonante courte + la nappe plonge puis repart plus tendue
+      const c = this.ctx; if (!c) return; const t = c.currentTime;
+      const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.setValueAtTime(2200, t); f.frequency.exponentialRampToValueAtTime(400, t + 0.45); f.connect(this.out);
+      [233, 247, 349.2].forEach(fr => {
+        const o = c.createOscillator(), g = c.createGain(); o.type = 'sawtooth'; o.frequency.value = fr;
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.07, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+        o.connect(g).connect(f); o.start(t); o.stop(t + 0.55);
+      });
+      this.kickHit = 1; this.boost = t + 4; this.duckBed(0.15, 1.2);
+    },
     win() { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => this.tone(f, 0.18, 'sine', 0.12), i * 120)); },
     thump(t, v = 0.5) {
       const c = this.ctx; if (!c) return;
@@ -38,22 +148,22 @@
         const o = c.createOscillator(), g = c.createGain(); o.type = 'sine';
         o.frequency.setValueAtTime(f, t + d); o.frequency.exponentialRampToValueAtTime(30, t + d + 0.18);
         g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(v, t + d + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.22);
-        o.connect(g).connect(c.destination); o.start(t + d); o.stop(t + d + 0.25);
+        o.connect(g).connect(this.out); o.start(t + d); o.stop(t + d + 0.25);
       });
     },
     beepAt(t, f, d = 0.05, v = 0.07) {
       const c = this.ctx; if (!c) return;
       const o = c.createOscillator(), g = c.createGain(); o.type = 'square'; o.frequency.value = f;
       g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-      o.connect(g).connect(c.destination); o.start(t); o.stop(t + d + 0.02);
+      o.connect(g).connect(this.out); o.start(t); o.stop(t + d + 0.02);
     },
     heartRush(sec) { // battements + bips qui s'accélèrent
       const c = this.ctx; if (!c) return; let t = c.currentTime, gap = 0.34, k = 0;
-      while (t < c.currentTime + sec) { this.beepAt(t, 1500 + k * 60); if (k % 2 === 0) this.thump(t, 0.6); t += gap; gap = Math.max(0.05, gap * 0.8); k++; }
+      while (t < c.currentTime + sec) { this.beepAt(t, 700 + k * 30, 0.05, 0.05); if (k % 2 === 0) this.thump(t, 0.6); t += gap; gap = Math.max(0.05, gap * 0.8); k++; }
     },
     bigBoom() {
       const c = this.ctx; if (!c) return; const t = c.currentTime;
-      const comp = c.createDynamicsCompressor(); comp.connect(c.destination);
+      const comp = c.createDynamicsCompressor(); comp.connect(this.out);
       const len = c.sampleRate * 3, buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
       const n = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
@@ -71,14 +181,14 @@
       const o = c.createOscillator(), g = c.createGain(); o.type = 'sawtooth';
       o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(40, t + 0.9);
       g.gain.setValueAtTime(0.09, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.95);
-      o.connect(g).connect(c.destination); o.start(t); o.stop(t + 1);
+      o.connect(g).connect(this.out); o.start(t); o.stop(t + 1);
     },
     jingle() {
       const c = this.ctx; if (!c) return; const t = c.currentTime;
       const note = (f, at, d, v = 0.09, type = 'triangle') => {
         const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.value = f;
         g.gain.setValueAtTime(0.0001, t + at); g.gain.exponentialRampToValueAtTime(v, t + at + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + at + d);
-        o.connect(g).connect(c.destination); o.start(t + at); o.stop(t + at + d + 0.05);
+        o.connect(g).connect(this.out); o.start(t + at); o.stop(t + at + d + 0.05);
       };
       [[392, 0], [523, 0.14], [659, 0.28], [784, 0.42], [659, 0.6], [784, 0.72]].forEach(([f, a]) => { note(f, a, 0.2); note(f * 2, a, 0.12, 0.03, 'sine'); });
       [523, 659, 784, 1047].forEach(f => { note(f, 0.92, 1.4, 0.07); note(f / 2, 0.92, 1.4, 0.04, 'sine'); });
@@ -89,7 +199,7 @@
       for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
       const s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
       f.type = 'lowpass'; f.frequency.value = 700; g.gain.value = 0.6;
-      s.buffer = buf; s.connect(f).connect(g).connect(c.destination); s.start();
+      s.buffer = buf; s.connect(f).connect(g).connect(this.out); s.start();
     }
   };
   const fmt = ms => { const s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
@@ -133,7 +243,7 @@
       remaining: START_MS, strikes: 0, over: false, running: true, face: 0,
       solved: { fils: false, clavier: false, panneau: false, aiguille: false },
       cut: new Set(), screwStep: 0, screwAnim: {}, lidStart: 0, entry: '', keyFlash: {},
-      pos: G.p.maze.start.slice(), needle: G.p.maze.start.slice(), bump: null, lastSec: 300
+      pos: G.p.maze.start.slice(), needle: G.p.maze.start.slice(), nv: [0, 0], mazeFlash: 0, padFlash: {}, lastSec: 300
     });
     rotY = 0; targetY = 0;
     G.displayMs = null; resetFx(); bomb.position.set(0, 0, 0);
@@ -240,40 +350,66 @@
     plate(c, 'Dévisse dans l’ordre des chiffres du numéro de série.');
   }
 
-  const PAD = { n: [160, 349, 80, 46, '▲'], w: [64, 401, 80, 46, '◀'], s: [160, 401, 80, 46, '▼'], e: [256, 401, 80, 46, '▶'] };
+  const PAD = { n: [155, 304, 90, 50, '▲'], w: [50, 358, 90, 50, '◀'], s: [155, 358, 90, 50, '▼'], e: [260, 358, 90, 50, '▶'] };
+  const MZ = { cell: 32, ox: 0, oy: 40 }; MZ.ox = CW / 2 - (8 * MZ.cell) / 2; // zone du labyrinthe (coord. canvas)
+  const inMaze = (cx, cy) => { const n = G.p.maze.size * MZ.cell; return cx >= MZ.ox - 8 && cx <= MZ.ox + n + 8 && cy >= MZ.oy - 8 && cy <= MZ.oy + n + 8; };
+  const LIGHT_R = 1.7;          // rayon de lumière, en cases
+  const FLICKER = 5200, FLICKER_OFF = 750; // les murs disparaissent ~0,75 s toutes les 5,2 s
+  function wallsHidden(t) { return !G.solved.aiguille && (t % FLICKER) > FLICKER - FLICKER_OFF; }
   function drawMaze(c, reg) {
-    const m = G.p.maze, cell = 44, ox = CW / 2 - (m.size * cell) / 2, oy = 46;
+    const m = G.p.maze, cell = MZ.cell, n = m.size * cell, ox = MZ.ox, oy = MZ.oy, t = now();
     base(c, 'AIGUILLE'); led(c, G.solved.aiguille);
-    c.fillStyle = '#0d1b2a'; c.fillRect(ox - 6, oy - 6, m.size * cell + 12, m.size * cell + 12);
-    c.strokeStyle = '#90caf9'; c.lineWidth = 4; c.lineCap = 'round';
-    const line = (a, b, d, e) => { c.beginPath(); c.moveTo(a, b); c.lineTo(d, e); c.stroke(); };
-    for (let y = 0; y < m.size; y++) for (let x = 0; x < m.size; x++) {
-      const w = m.walls[y][x], X = ox + x * cell, Y = oy + y * cell;
-      if (w.n) line(X, Y, X + cell, Y); if (w.w) line(X, Y, X, Y + cell);
-      if (y === m.size - 1 && w.s) line(X, Y + cell, X + cell, Y + cell);
-      if (x === m.size - 1 && w.e) line(X + cell, Y, X + cell, Y + cell);
-    }
+    c.fillStyle = '#0d1b2a'; c.fillRect(ox - 6, oy - 6, n + 12, n + 12);
     const cx = x => ox + x * cell + cell / 2, cy = y => oy + y * cell + cell / 2;
-    tx(c, '⚑', cx(m.goal[0]), cy(m.goal[1]), 30, G.solved.aiguille ? '#00e676' : '#ff5252');
-    // aiguille animée
-    G.needle[0] += (G.pos[0] - G.needle[0]) * 0.35; G.needle[1] += (G.pos[1] - G.needle[1]) * 0.35;
-    let bx = 0, by = 0;
-    if (G.bump && now() < G.bump.until) { const k = Math.sin((G.bump.until - now()) / 120 * Math.PI) * 8; bx = G.bump.d[0] * k; by = G.bump.d[1] * k; }
-    c.beginPath(); c.arc(cx(G.needle[0]) + bx, cy(G.needle[1]) + by, 13, 0, 7); c.fillStyle = '#ffd54f'; c.fill(); c.lineWidth = 3; c.strokeStyle = '#ff6f00'; c.stroke();
-    if (G.solved.aiguille) {
-      tx(c, 'LÉGENDE', CW / 2, 288, 14, '#fff', true);
-      const items = G.p.legend.map(l => l.symbol + ' = ' + l.digit);
-      tx(c, items.slice(0, 3).join('     '), CW / 2, 310, 19, '#fff', true);
-      tx(c, items.slice(3).join('     '), CW / 2, 333, 19, '#fff', true);
-    } else {
-      tx(c, 'LÉGENDE VERROUILLÉE', CW / 2, 290, 15, '#90a4ae', true);
-      tx(c, 'Amène l’aiguille au drapeau ⚑', CW / 2, 312, 14, '#90a4ae');
+    const nx = cx(G.needle[0]), ny = cy(G.needle[1]);
+    const hidden = wallsHidden(t);
+    const hit = G.mazeFlash > t;
+    if (!hidden) {
+      c.strokeStyle = hit ? '#ff5252' : '#90caf9'; c.lineWidth = 4; c.lineCap = 'round';
+      const line = (a, b, d, e) => { c.beginPath(); c.moveTo(a, b); c.lineTo(d, e); c.stroke(); };
+      for (let y = 0; y < m.size; y++) for (let x = 0; x < m.size; x++) {
+        const w = m.walls[y][x], X = ox + x * cell, Y = oy + y * cell;
+        if (w.n) line(X, Y, X + cell, Y); if (w.w) line(X, Y, X, Y + cell);
+        if (y === m.size - 1 && w.s) line(X, Y + cell, X + cell, Y + cell);
+        if (x === m.size - 1 && w.e) line(X + cell, Y, X + cell, Y + cell);
+      }
     }
-    if (!G.solved.aiguille) Object.entries(PAD).forEach(([d, [x, y, w, h, s]]) => {
-      rr(c, x, y, w, h, 10, '#263238', '#7a828f'); tx(c, s, x + w / 2, y + h / 2, 24, '#fff', true);
+    // obscurité : seul un halo autour de l'aiguille montre les murs (tout s'allume une fois résolu)
+    if (!G.solved.aiguille) {
+      const flick = (t % FLICKER) > FLICKER - FLICKER_OFF - 250 && !hidden ? (Math.random() < 0.5 ? 0.75 : 1) : 1;
+      const R = LIGHT_R * cell * flick;
+      c.save(); c.beginPath(); c.rect(ox - 6, oy - 6, n + 12, n + 12); c.clip();
+      const g = c.createRadialGradient(nx, ny, R * 0.35, nx, ny, R);
+      g.addColorStop(0, 'rgba(3,6,10,0)'); g.addColorStop(1, 'rgba(3,6,10,0.97)');
+      c.fillStyle = g; c.fillRect(ox - 6, oy - 6, n + 12, n + 12);
+      c.restore();
+      // cadre extérieur toujours visible
+      c.strokeStyle = 'rgba(144,202,249,.35)'; c.lineWidth = 2; c.strokeRect(ox - 1, oy - 1, n + 2, n + 2);
+    }
+    if (hit) { c.fillStyle = 'rgba(255,0,0,' + (0.4 * (G.mazeFlash - t) / 450).toFixed(2) + ')'; c.fillRect(ox - 6, oy - 6, n + 12, n + 12); }
+    // drapeau (toujours visible, pulse)
+    const pulse = 1 + 0.12 * Math.sin(t / 180);
+    c.globalAlpha = 0.35; c.fillStyle = G.solved.aiguille ? '#00e676' : '#ff5252';
+    c.beginPath(); c.arc(cx(m.goal[0]), cy(m.goal[1]), 14 * pulse, 0, 7); c.fill(); c.globalAlpha = 1;
+    tx(c, '⚑', cx(m.goal[0]), cy(m.goal[1]), 24, G.solved.aiguille ? '#00e676' : '#ff5252');
+    // aiguille (bille physique)
+    const sp = Math.hypot(G.nv[0], G.nv[1]);
+    c.save(); c.translate(nx, ny); c.rotate(Math.atan2(G.nv[1], G.nv[0])); c.scale(1 + Math.min(0.25, sp * 0.03), 1 - Math.min(0.15, sp * 0.02));
+    c.beginPath(); c.arc(0, 0, 10, 0, 7); c.fillStyle = '#ffd54f'; c.fill(); c.lineWidth = 3; c.strokeStyle = '#ff6f00'; c.stroke();
+    c.restore();
+    c.beginPath(); c.arc(nx - 3, ny - 3, 3, 0, 7); c.fillStyle = 'rgba(255,255,255,.8)'; c.fill();
+    if (hidden) tx(c, '⚡ panne de lumière ⚡', CW / 2, oy + n + 1, 11, '#ffd54f', true);
+    if (G.solved.aiguille) {
+      tx(c, 'LÉGENDE', CW / 2, 318, 14, '#fff', true);
+      const items = G.p.legend.map(l => l.symbol + ' = ' + l.digit);
+      tx(c, items.slice(0, 3).join('     '), CW / 2, 348, 21, '#fff', true);
+      tx(c, items.slice(3).join('     '), CW / 2, 380, 21, '#fff', true);
+    } else Object.entries(PAD).forEach(([d, [x, y, w, h, s]]) => {
+      const pressed = (G.padFlash[d] || 0) > t;
+      rr(c, x, y + (pressed ? 2 : 0), w, h, 10, pressed ? '#455a64' : '#263238', '#7a828f'); tx(c, s, x + w / 2, y + h / 2 + (pressed ? 2 : 0), 26, '#fff', true);
       reg(x, y, w, h, () => moveNeedle(d));
     });
-    plate(c, 'Guide l’aiguille sans toucher les murs. Récompense : la légende.');
+    plate(c, G.solved.aiguille ? 'Légende débloquée : sers-t’en au clavier.' : 'Dans le noir : glisse sur le labyrinthe ou utilise la croix. Un mur = −30 s.');
   }
 
   function drawTop(c) {
@@ -315,10 +451,18 @@
     }
   }
   function moveNeedle(d) {
-    if (G.solved.aiguille) return;
-    const [x, y] = G.pos; faces[3].animUntil = now() + 400;
-    if (!L.canMove(G.p.maze, x, y, d)) { G.bump = { d: L.STEP[d], until: now() + 120 }; return strike(); }
-    G.pos = [x + L.STEP[d][0], y + L.STEP[d][1]]; Sfx.tone(700, 0.03, 'sine', 0.06);
+    if (G.solved.aiguille || G.over) return;
+    const [x, y] = G.pos, [dx, dy] = L.STEP[d]; G.padFlash[d] = now() + 110;
+    if (!L.canMove(G.p.maze, x, y, d)) {
+      // la bille cogne le mur et rebondit, la bombe sursaute
+      G.nv[0] += dx * 7; G.nv[1] += dy * 7; G.mazeFlash = now() + 450;
+      kickTilt(dx * 3.2 + (Math.random() - 0.5) * 2, dy * 3.2 + (Math.random() - 0.5) * 2, 3);
+      Sfx.tone(90, 0.25, 'square', 0.12, -40);
+      return strike();
+    }
+    G.pos = [x + dx, y + dy]; G.nv[0] += dx * 3; G.nv[1] += dy * 3; // élan
+    kickTilt(dx * 0.9, dy * 0.9, 0);
+    Sfx.tone(520 + Math.random() * 120, 0.05, 'triangle', 0.06, 200);
     if (G.pos[0] === G.p.maze.goal[0] && G.pos[1] === G.p.maze.goal[1]) solve('aiguille');
   }
 
@@ -358,6 +502,7 @@
     document.querySelectorAll('#leds i').forEach(i => i.classList.toggle('on', G.solved[i.dataset.k]));
     document.querySelectorAll('#dots i').forEach((d, i) => d.classList.toggle('on', i === G.face));
     $('faceName').textContent = 'Face ' + (G.face + 1) + ' — ' + FACES[G.face];
+    $('dots').querySelector('span').textContent = G.face === 3 && !G.solved.aiguille ? 'glisse hors du labyrinthe ou ◀ ▶ pour tourner' : 'glisse pour tourner';
     topDirty = true;
   }
   function show(screen) {
@@ -391,9 +536,15 @@
     }
     show('end');
   }
-  function start() { Sfx.init(); newGame(); show('game'); }
+  function start() {
+    Sfx.init(); newGame(); show('game');
+    Sfx.bedStart(() => G.p && { remaining: G.remaining, strikes: G.strikes, running: G.running && !G.over, final: cine && cine.type === 'lose' && !cine.exploded });
+  }
+  function muteUi() { $('mute').textContent = Sfx.muted ? '🔇' : '🔊'; $('mute').setAttribute('aria-label', Sfx.muted ? 'Activer le son' : 'Couper le son'); }
+  $('mute').onclick = e => { e.stopPropagation(); Sfx.init(); Sfx.setMuted(!Sfx.muted); muteUi(); };
+  muteUi();
   $('start').onclick = start; $('again').onclick = start;
-  $('home').onclick = () => { G.over = true; resetFx(); show('title'); };
+  $('home').onclick = () => { G.over = true; Sfx.bedStop(); resetFx(); show('title'); };
   $('left').onclick = () => { Sfx.init(); rotate(-1); };
   $('right').onclick = () => { Sfx.init(); rotate(1); };
   addEventListener('keydown', e => {
@@ -424,7 +575,14 @@
   // ordre BoxGeometry : +x, -x, +y, -y, +z, -z  → faces 1, 3, dessus, dessous, 0, 2
   const box = new THREE.Mesh(new THREE.BoxGeometry(BW, BH, BD), [mat(faces[1].tex), mat(faces[3].tex), mat(topTex), plain, mat(faces[0].tex), mat(faces[2].tex)]);
   const MAT_TO_FACE = { 4: 0, 0: 1, 5: 2, 1: 3 };
-  const bomb = new THREE.Group(); bomb.add(box); scene.add(bomb);
+  const bomb = new THREE.Group(); bomb.add(box);
+  const rig = new THREE.Group(); rig.add(bomb); scene.add(rig); // bascule dans le repère caméra
+  const tilt = { x: 0, z: 0, vx: 0, vz: 0, jx: 0, jy: 0, jvx: 0, jvy: 0 };
+  // impulsion : dx>0 penche vers la droite, dy>0 penche le haut vers le joueur ; jolt = secousse latérale
+  function kickTilt(dx, dy, jolt) {
+    tilt.vz -= dx * 0.9; tilt.vx += dy * 0.9;
+    if (jolt) { tilt.jvx += (Math.random() - 0.5) * jolt; tilt.jvy += (Math.random() - 0.5) * jolt * 0.6; }
+  }
   const metal = new THREE.MeshStandardMaterial({ color: 0x8d939c, roughness: 0.35, metalness: 0.8 });
   [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([x, z]) => {
     const c = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, BH + 0.12, 16), metal); c.position.set(x * BW / 2, 0, z * BD / 2); bomb.add(c);
@@ -488,7 +646,7 @@
 
   function doExplosion() {
     if (cine.exploded) return; cine.exploded = true; cine.tx = ft;
-    bomb.visible = false; Sfx.bigBoom();
+    bomb.visible = false; Sfx.bedStop(true); Sfx.bigBoom();
     if (navigator.vibrate) navigator.vibrate(RM ? 300 : [500, 80, 250, 80, 700, 120, 300]);
     flash(RM ? 0.5 : 1, RM ? 500 : 900);
     $('vignette').style.opacity = '1';
@@ -571,7 +729,7 @@
     $('nav').classList.add('hidden');
     if (type === 'win') {
       $('timer').classList.remove('urgent'); $('timer').classList.add('frozen');
-      Sfx.powerDown(); setTimeout(() => cine && cine.type === 'win' && Sfx.jingle(), RM ? 500 : 1000);
+      Sfx.bedStop(true); Sfx.powerDown(); setTimeout(() => cine && cine.type === 'win' && Sfx.jingle(), RM ? 500 : 1000);
       if (navigator.vibrate) navigator.vibrate([60, 60, 60, 60, 200]);
       winFx();
     } else {
@@ -671,9 +829,24 @@
   let rotY = 0, targetY = 0, shakeUntil = 0, flashUntil = 0;
   const drag = { active: false, down: false, x: 0, y: 0, base: 0 };
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-  canvas.addEventListener('pointerdown', e => { Sfx.init(); if (G.over) return; Object.assign(drag, { down: true, active: false, x: e.clientX, y: e.clientY, base: targetY }); canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointerdown', e => {
+    Sfx.init(); if (G.over) return;
+    const h = canAct() ? hitFace(e.clientX, e.clientY) : null;
+    const maze = !!(h && h.fi === 3 && G.face === 3 && !G.solved.aiguille && inMaze(h.cx, h.cy));
+    Object.assign(drag, { down: true, active: false, maze, ax: e.clientX, ay: e.clientY, moved: false, x: e.clientX, y: e.clientY, base: targetY });
+    canvas.setPointerCapture(e.pointerId);
+  });
   canvas.addEventListener('pointermove', e => {
     if (!drag.down) return;
+    if (drag.maze) { // glisser sur le labyrinthe = déplacer la bille, jamais tourner la bombe
+      const dx = e.clientX - drag.ax, dy = e.clientY - drag.ay, STEPPX = 34;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) >= STEPPX) {
+        moveNeedle(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'e' : 'w') : (dy > 0 ? 's' : 'n'));
+        drag.ax = e.clientX; drag.ay = e.clientY; drag.moved = true;
+        if (G.over || G.solved.aiguille) drag.maze = false, drag.down = false;
+      }
+      return;
+    }
     const dx = e.clientX - drag.x;
     if (!drag.active && Math.abs(dx) > 10) drag.active = true;
     if (drag.active) rotY = drag.base + THREE.MathUtils.clamp(dx * 0.007, -HALF * 0.95, HALF * 0.95);
@@ -682,20 +855,27 @@
     if (!drag.down) return;
     drag.down = false;
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (drag.maze) {
+      drag.maze = false;
+      if (!drag.moved && Math.max(Math.abs(dx), Math.abs(dy)) >= 18) moveNeedle(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'e' : 'w') : (dy > 0 ? 's' : 'n'));
+      return;
+    }
     if (drag.active) { drag.active = false; if (Math.abs(dx) > 45) rotate(dx < 0 ? 1 : -1); return; }
     if (Math.abs(dx) < 10 && Math.abs(dy) < 10) tapAt(e.clientX, e.clientY);
   });
   canvas.addEventListener('pointercancel', () => { drag.down = drag.active = false; });
-  function tapAt(x, y) {
-    if (!canAct()) return;
+  function hitFace(x, y) {
     const r = canvas.getBoundingClientRect();
     ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camera);
     const hit = ray.intersectObject(box)[0];
-    if (!hit) return;
-    const fi = MAT_TO_FACE[hit.face.materialIndex];
-    if (fi !== G.face) return;
-    const cx = hit.uv.x * CW, cy = (1 - hit.uv.y) * CH;
+    if (!hit) return null;
+    return { fi: MAT_TO_FACE[hit.face.materialIndex], cx: hit.uv.x * CW, cy: (1 - hit.uv.y) * CH };
+  }
+  function tapAt(x, y) {
+    if (!canAct()) return;
+    const h = hitFace(x, y); if (!h || h.fi !== G.face) return;
+    const fi = h.fi, cx = h.cx, cy = h.cy;
     const reg = faces[fi].regions.find(q => cx >= q.x && cx <= q.x + q.w && cy >= q.y && cy <= q.y + q.h);
     if (reg) reg.fn();
   }
@@ -706,23 +886,47 @@
     const pt = box.localToWorld(local).project(camera), r = canvas.getBoundingClientRect();
     return [r.left + (pt.x + 1) / 2 * r.width, r.top + (1 - pt.y) / 2 * r.height];
   }
-  window.D3 = { G, cine: () => cine && { type: cine.type, ended: !!cine.ended, exploded: !!cine.exploded, t: ft - cine.t0, tx: cine.exploded ? ft - cine.tx : -1 }, toScreen, keyRect, SCREWS, PAD, CW, CH, settled: () => Math.abs(rotY - targetY) < 0.01 };
+  window.D3 = { G, cine: () => cine && { type: cine.type, ended: !!cine.ended, exploded: !!cine.exploded, t: ft - cine.t0, tx: cine.exploded ? ft - cine.tx : -1 }, audio: () => Sfx.ctx ? { state: Sfx.ctx.state, bed: !!Sfx.bed, muted: Sfx.muted, tension: +Sfx.tension().toFixed(2) } : null, toScreen, keyRect, SCREWS, PAD, MZ, tilt, CW, CH, settled: () => Math.abs(rotY - targetY) < 0.01 };
 
   // ---------- Boucle ----------
   let last = now(), lightsT = 0;
   drawTop(topCanvas.getContext("2d")); topTex.needsUpdate = true;
+  let lastMaze = 0;
+  function stepPhysics(t, sRaw) {
+    const s = Math.min(sRaw, 0.05);
+    // bille : ressort amorti (glisse avec élan et se pose dans la case)
+    if (G.p) for (let k = 0; k < 2; k++) {
+      const a = 140 * (G.pos[k] - G.needle[k]) - 13 * G.nv[k];
+      G.nv[k] += a * s; G.needle[k] += G.nv[k] * s;
+    }
+    // bombe instable sur la face Aiguille
+    const unstable = G.p && !G.over && G.face === 3 && !G.solved.aiguille && Math.abs(rotY - targetY) < 0.3;
+    const sec = t / 1000, amp = unstable ? 1 : 0;
+    const txg = amp * (0.05 * Math.sin(sec * 1.7) + 0.025 * Math.sin(sec * 4.3 + 1));
+    const tzg = amp * (0.06 * Math.sin(sec * 1.1 + 2) + 0.03 * Math.sin(sec * 3.7));
+    tilt.vx += (-55 * (tilt.x - txg) - 5 * tilt.vx) * s; tilt.x += tilt.vx * s;
+    tilt.vz += (-55 * (tilt.z - tzg) - 5 * tilt.vz) * s; tilt.z += tilt.vz * s;
+    const jxg = amp * 0.04 * Math.sin(sec * 2.3), jyg = 0;
+    tilt.jvx += (-160 * (tilt.jx - jxg) - 9 * tilt.jvx) * s; tilt.jx += tilt.jvx * s;
+    tilt.jvy += (-160 * (tilt.jy - jyg) - 9 * tilt.jvy) * s; tilt.jy += tilt.jvy * s;
+    const lim = 0.35;
+    rig.rotation.x = THREE.MathUtils.clamp(tilt.x, -lim, lim); rig.rotation.z = THREE.MathUtils.clamp(tilt.z, -lim, lim);
+    rig.position.x = tilt.jx * 0.25; rig.position.y = tilt.jy * 0.15;
+    if (G.p && G.face === 3 && t - lastMaze > 33) { faces[3].dirty = true; lastMaze = t; }
+  }
   function loop() {
     const t = now(), dt = Math.min(100, t - last); last = t;
     if (G.running && !G.over) {
       G.remaining -= dt;
       if (G.remaining <= 0) { G.remaining = 0; lose(); }
       const sec = Math.ceil(G.remaining / 1000);
-      if (sec !== G.lastSec) { G.lastSec = sec; Sfx.tick(sec <= 30); if (sec <= 10 && Sfx.ctx) Sfx.thump(Sfx.ctx.currentTime, 0.35); updateHud(); }
+      if (sec !== G.lastSec) { G.lastSec = sec; updateHud(); }
     }
     if (!drag.active) rotY += (targetY - rotY) * Math.min(1, dt * 0.012);
     const idle = G.over && G.won ? t * 0.0006 : 0;
     bomb.rotation.y = rotY + idle;
     bomb.position.y = Math.sin(t / 900) * 0.02;
+    stepPhysics(t, dt / 1000);
     // faces à redessiner
     if (G.p) faces.forEach((f, i) => {
       const lights = i === 2 && t - lightsT > 90;

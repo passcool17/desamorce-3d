@@ -24,7 +24,7 @@
   ];
   const SYMBOLS = ['★', '●', '▲', '◆', '■', '♥', '✚', '☾'];
   const LETTERS = 'ABCDEFGHJKLMNPRSTUVWXYZ';
-  const MAZE_SIZE = 5;
+  const MAZE_SIZE = 8; // labyrinthe parfait (backtracking récursif) : longs culs-de-sac, un seul chemin
 
   function shuffle(arr, rnd) {
     const a = arr.slice();

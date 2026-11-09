@@ -47,9 +47,29 @@ try {
   for (const n of p.solution.screwOrder) { await tapFace(2, ...SC[n - 1]); await sleep(120); }
   await sleep(1400); await shot('05-panneau-ouvert');
   await nextBtn();
-  const PAD = await ev('D3.PAD');
-  for (const d of p.solution.mazePath) { const [x, y, w, h] = PAD[d]; await tapFace(3, x + w / 2, y + h / 2); }
-  await sleep(500); await shot('06-aiguille');
+  const PAD = await ev('D3.PAD'), MZ = await ev('D3.MZ');
+  const pad = async d => { const [x, y, w, h] = PAD[d]; await tapFace(3, x + w / 2, y + h / 2); };
+  const path = p.solution.mazePath; console.log('aiguille 8x8 : chemin de', path.length, 'déplacements');
+  // 1) glisser sur le labyrinthe : la bille bouge, la bombe ne tourne pas
+  const [sx, sy] = p.maze.start, cellC = (x, y) => [MZ.ox + x * MZ.cell + MZ.cell / 2, MZ.oy + y * MZ.cell + MZ.cell / 2];
+  const [ax, ay] = await ev(`D3.toScreen(3,${cellC(sx, sy).join(',')})`);
+  const dir = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] }[path[0]];
+  await mouse('mouseMoved', ax, ay); await mouse('mousePressed', ax, ay);
+  for (let k = 1; k <= 6; k++) { await mouse('mouseMoved', ax + dir[0] * 8 * k, ay + dir[1] * 8 * k); await sleep(16); }
+  await mouse('mouseReleased', ax + dir[0] * 48, ay + dir[1] * 48); await sleep(250);
+  s = await st(); const pos1 = await ev('D3.G.pos');
+  console.log('glisser sur le labyrinthe → face', s.face + 1, '| bille', JSON.stringify(p.maze.start), '→', JSON.stringify(pos1));
+  if (s.face !== 3 || (pos1[0] === sx && pos1[1] === sy)) throw new Error('glisser sur le labyrinthe inopérant ou a tourné la bombe');
+  // 2) mur touché volontairement : pénalité + secousse
+  const blocked = ['n', 'e', 's', 'w'].find(d => { const st2 = { n: 'n', e: 'e', s: 's', w: 'w' }[d]; const [x, y] = pos1; const w = p.maze.walls[y][x][st2]; return w; });
+  const before = (await st()).strikes; await pad(blocked); await sleep(60); await shot('06a-aiguille-mur');
+  s = await st(); console.log('mur touché → erreurs', before, '→', s.strikes, '| bascule', JSON.stringify(await ev('({x:+D3.tilt.x.toFixed(3),z:+D3.tilt.z.toFixed(3),jx:+D3.tilt.jx.toFixed(3)})')));
+  if (s.strikes !== before + 1) throw new Error('mur sans pénalité');
+  await sleep(700);
+  // 3) le reste à la croix directionnelle
+  for (let i = 1; i < path.length; i++) { await pad(path[i]); if (i === 6) { await sleep(40); await shot('aiguille-v2'); console.log('bascule en mouvement', JSON.stringify(await ev('({x:+D3.tilt.x.toFixed(3),z:+D3.tilt.z.toFixed(3)})'))); } }
+  await sleep(600); await shot('06-aiguille');
+  console.log('audio en jeu :', JSON.stringify(await ev('D3.audio()')));
   s = await st(); console.log('résolus avant le code', JSON.stringify(s.solved));
   await nextBtn(); await nextBtn();
   const KR = await ev('[...Array(12).keys()].map(D3.keyRect)');
@@ -92,6 +112,7 @@ try {
   await sleep(900); await shot('11-reduit-boum');
   for (let i = 0; i < 50 && !(await st()).end; i++) await sleep(150);
   console.log('mouvement réduit : BOUM → résultat après', ((Date.now() - t4) / 1000).toFixed(1), 's');
+  console.log('audio :', JSON.stringify(await ev('D3.audio()')));
   console.log('erreurs JS :', errors.length ? errors : 'aucune');
   if (errors.length) process.exitCode = 1;
 } catch (e) { console.error('ÉCHEC', e.message, errors); process.exitCode = 1; }
