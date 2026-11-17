@@ -2,43 +2,119 @@
 <html lang="fr-CA">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#0d0f13">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0c0f">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="Désamorce! 3D : une bombe fictive en 3D à six faces, trois niveaux et un mode à deux (un lit le manuel sur son téléphone).">
 <title>Désamorce! 3D</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E💣%3C/text%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="stylesheet" href="./style.css?v=0.3.0">
+<link rel="modulepreload" href="./vendor/three-0.187.0/three.module.min.js">
+<script type="importmap">
+{"imports":{
+  "three": "./vendor/three-0.187.0/three.module.min.js",
+  "three/addons/": "./vendor/three-0.187.0/addons/",
+  "./js/audio.js": "./js/audio.js?v=0.3.0",
+  "./js/faces.js": "./js/faces.js?v=0.3.0",
+  "./js/fx.js": "./js/fx.js?v=0.3.0",
+  "./js/bomb-model.js": "./js/bomb-model.js?v=0.3.0"
+}}
+</script>
 </head>
-<body>
-<canvas id="scene"></canvas>
+<body data-screen="title">
+<canvas id="scene" aria-label="La bombe en 3D"></canvas>
+<div id="loading" role="status"><b>DÉSAMORCE!</b><span>Chargement de la bombe…</span></div>
+
 <div id="hud" class="hidden">
-  <div id="leds"><i data-k="fils"></i><i data-k="clavier"></i><i data-k="panneau"></i><i data-k="aiguille"></i><span>modules</span></div>
-  <div id="timer">5:00</div>
-  <div id="strikes"><b>✖</b><b>✖</b><b>✖</b></div>
+  <div id="leds" aria-label="Modules désamorcés"></div>
+  <div id="timer" role="timer">5:00</div>
+  <div id="strikes" aria-label="Erreurs"></div>
   <div id="penalty">−30 s</div>
   <div id="faceName">Face 1 — Fils</div>
+  <button id="codeChip" class="hidden" aria-label="Code de la bombe pour le manuel">📖</button>
 </div>
-<div id="nav" class="hidden">
-  <button id="left" aria-label="Face précédente">◀</button>
-  <div id="dots"><i></i><i></i><i></i><i></i><span>glisse pour tourner</span></div>
-  <button id="right" aria-label="Face suivante">▶</button>
-</div>
+<nav id="nav" class="hidden" aria-label="Tourner la bombe">
+  <button id="left" class="navb" aria-label="Face précédente">◀</button>
+  <div id="mid">
+    <button id="bUp" class="flipb" aria-label="Voir le dessus">▲ <small>Dessus</small></button>
+    <div id="dots"><i></i><i></i><i></i><i></i></div>
+    <button id="bDown" class="flipb" aria-label="Voir le dessous">▼ <small>Dessous</small></button>
+    <span id="hint">glisse pour tourner</span>
+  </div>
+  <button id="right" class="navb" aria-label="Face suivante">▶</button>
+</nav>
 <div id="fx"><div id="vignette"></div><svg id="cracks" xmlns="http://www.w3.org/2000/svg"></svg><div id="flash"></div></div>
 <button id="mute" aria-label="Couper le son">🔊</button>
 <div id="skip" class="hidden"><span>Touche pour passer ▸</span></div>
-<div id="title" class="screen">
-  <h1>DÉSAMORCE!<small>3D</small></h1>
-  <p class="sub">Une bombe. Quatre faces. Cinq minutes.</p>
-  <ul>
-    <li>Glisse à gauche/droite (ou ◀ ▶) pour tourner la bombe en 3D.</li>
-    <li>Chaque face a un module à désamorcer.</li>
-    <li>Les indices sont cachés sur les AUTRES faces.</li>
-    <li>Erreur : −30 s. Trois erreurs : BOUM.</li>
-    <li>Nouvelle bombe à chaque partie.</li>
-  </ul>
-  <button class="big" id="start">COMMENCER</button>
-  <p class="fine">Jeu fictif — aucune vraie bombe n’a été blessée.</p>
-</div>
-<div id="end" class="screen hidden">
+<div id="perf" class="hidden" aria-hidden="true"></div>
+
+<section id="title" class="screen" aria-labelledby="t1">
+  <div class="card">
+    <h1 id="t1">DÉSAMORCE!<small>3D</small></h1>
+    <p class="sub">Une bombe. Six faces. Un chrono.</p>
+    <fieldset class="seg"><legend>Niveau</legend>
+      <button data-diff="facile" aria-pressed="false">Facile</button><button data-diff="normal" aria-pressed="true">Normal</button><button data-diff="difficile" aria-pressed="false">Difficile</button>
+    </fieldset>
+    <p id="diffInfo" class="info"></p>
+    <fieldset class="seg"><legend>Mode</legend>
+      <button data-mode="solo" aria-pressed="true">Solo</button><button data-mode="duo" aria-pressed="false">Duo <small>· manuel</small></button>
+    </fieldset>
+    <p id="modeInfo" class="info"></p>
+    <button class="big" id="start">COMMENCER</button>
+    <div class="links"><button id="bHow">Comment jouer</button><a href="./manuel.html" class="btnlink">Manuel</a><button id="bCredits">Crédits</button></div>
+    <p class="fine">Jeu fictif — aucune vraie bombe n’a été blessée.</p>
+  </div>
+</section>
+
+<section id="how" class="screen hidden" aria-labelledby="t2">
+  <div class="card scroll">
+    <h2 id="t2">Comment jouer</h2>
+    <ul>
+      <li><b>Tourner :</b> glisse à gauche/droite (ou ◀ ▶). <b>Basculer :</b> glisse vers le bas pour voir le <b>dessus</b>, vers le haut pour le <b>dessous</b> (ou ▲ ▼).</li>
+      <li><b>Toucher</b> les éléments de la face visible : fils, vis, touches, leviers, boutons de couleur.</li>
+      <li>Les indices d’un module sont sur une <b>autre</b> face. En mode duo, certains sont seulement dans le manuel.</li>
+      <li><b>Fils :</b> coupe les fils dont la couleur est celle d’un voyant allumé (face Panneau).</li>
+      <li><b>Panneau :</b> dévisse les 4 vis dans l’ordre des chiffres du n° de série (face Fils). Le couvercle tombe : 4 symboles.</li>
+      <li><b>Clavier :</b> traduis les 4 symboles avec la légende (récompense de l’Aiguille), puis OK.</li>
+      <li><b>Aiguille :</b> guide la bille jusqu’au drapeau, dans le noir, sans toucher un mur.</li>
+      <li><b>Interrupteurs</b> (dessus) : lève ceux dont la somme des valeurs égale la TENSION (dessous), puis VALIDER.</li>
+      <li><b>Séquence</b> (dessous) : des couleurs clignotent ; appuie, dans l’ordre, la couleur que donne la table du dessus.</li>
+      <li>Erreur : pénalité de temps et une croix. Toutes les croix : BOUM.</li>
+      <li>Clavier d’ordinateur : flèches pour tourner/basculer (sur l’Aiguille, les flèches bougent la bille ; Maj + flèche pour tourner), M pour le son.</li>
+    </ul>
+    <button class="big" data-back>RETOUR</button>
+  </div>
+</section>
+
+<section id="credits" class="screen hidden" aria-labelledby="t3">
+  <div class="card scroll">
+    <h2 id="t3">Crédits</h2>
+    <ul>
+      <li>Jeu, énigmes, sons synthétisés et modèle 3D procédural : Arcade 3D pour PassCool_17.</li>
+      <li>three.js 0.187.0 (MIT), detect-gpu 5.0.70 (MIT), qrcode-generator 2.0.4 de Kazuhiko Arase (MIT) — hébergés avec le jeu.</li>
+      <li><b>Modèle 3D de la bombe (prochaine version) :</b> « Time Bomb » par st4ng et « Explosive Case » par kris vidotto, Sketchfab, licence CC BY 4.0.</li>
+    </ul>
+    <button class="big" data-back>RETOUR</button>
+  </div>
+</section>
+
+<section id="brief" class="screen hidden" aria-labelledby="t4">
+  <div class="card">
+    <h2 id="t4">Mode duo</h2>
+    <p class="sub">Le lecteur ouvre le manuel sur <b>son</b> téléphone :</p>
+    <canvas id="qr" width="232" height="232" aria-label="Code QR du manuel"></canvas>
+    <a id="briefLink" class="mono" target="_blank" rel="noopener"></a>
+    <p class="sub">ou va sur <b>manuel.html</b> et entre le code :</p>
+    <div id="briefCode" class="codebig"></div>
+    <p id="briefDiff" class="info"></p>
+    <button class="big" id="go">GO — DÉMARRER LE CHRONO</button>
+    <button id="briefBack">Retour</button>
+  </div>
+</section>
+
+<section id="end" class="screen hidden" aria-live="polite">
   <h1 id="endTitle"></h1>
   <p id="endSub"></p>
   <div id="endTime"></div>
@@ -46,10 +122,11 @@
   <p id="endInfo"></p>
   <p id="best"></p>
   <button class="big" id="again">REJOUER</button>
-  <button id="home">Accueil</button>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
-<script src="logic.js"></script>
-<script src="game3d.js"></script>
+  <button id="home">Menu</button>
+</section>
+<div id="qrPop" class="hidden" role="dialog" aria-label="Code QR du manuel"><div><canvas id="qr2" width="232" height="232"></canvas><b id="qrCode"></b><span>Touche pour fermer</span></div></div>
+
+<script src="./logic.js?v=0.3.0"></script>
+<script type="module" src="./js/main.js?v=0.3.0"></script>
 </body>
 </html>

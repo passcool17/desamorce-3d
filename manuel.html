@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14110b">
+<meta name="color-scheme" content="light dark">
+<title>Manuel de désamorçage — Désamorce! 3D</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./manual.css?v=0.3.0">
+</head>
+<body>
+<header>
+  <p class="kicker">Désamorce! 3D · mode duo</p>
+  <h1>Manuel de désamorçage</h1>
+  <p class="lead">Tu es le <b>lecteur</b>. Tu ne vois pas la bombe ; ton partenaire te la décrit. Ce manuel est calculé à partir du <b>code de la bombe</b>, sans serveur : il marche même hors ligne.</p>
+  <form id="f" autocomplete="off">
+    <label for="code">Code de la bombe</label>
+    <div class="row"><input id="code" name="code" inputmode="text" autocapitalize="characters" spellcheck="false" maxlength="9" placeholder="N-7K4QZ" aria-describedby="err"><button>Ouvrir</button></div>
+    <p id="err" role="alert"></p>
+  </form>
+</header>
+<main id="out" aria-live="polite"></main>
+<footer><a href="./">← Retour au jeu</a> · Jeu fictif — aucune vraie bombe.</footer>
+<script src="./logic.js?v=0.3.0"></script>
+<script type="module" src="./js/manual.js?v=0.3.0"></script>
+</body>
+</html>

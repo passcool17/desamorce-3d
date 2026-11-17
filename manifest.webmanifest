@@ -1,0 +1,17 @@
+{
+  "name": "Désamorce! 3D",
+  "short_name": "Désamorce 3D",
+  "description": "Une bombe fictive en 3D à six faces, trois niveaux et un mode à deux.",
+  "lang": "fr-CA",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0b0c0f",
+  "theme_color": "#0b0c0f",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
