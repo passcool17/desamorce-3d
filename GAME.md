@@ -50,19 +50,19 @@ Meilleur temps et étoiles mémorisés par niveau (et à part pour le duo).
 - **Mouvement réduit** (`prefers-reduced-motion`) : version allégée, sans secousse ni orbite, moins de particules, plus courte.
 
 ## Technique
-- **three.js 0.187.0** hébergé avec le jeu (`vendor/`, aucun CDN, décodeurs KTX2/Draco/meshopt locaux pour le futur modèle GLB). Modules ES + importmap, URL versionnées `?v=0.3.0`.
+- **three.js 0.187.0** hébergé avec le jeu (`vendor/`, aucun CDN, décodeurs KTX2 (Basis) et meshopt locaux pour le futur modèle GLB). Modules ES + importmap, URL versionnées `?v=0.3.1`.
 - Budget téléphone (Galaxy S20) : < 100 appels de dessin dans toutes les vues (29 à 43 mesurés), ~5 k triangles, aucune ombre dynamique (ombre portée simulée), pas de transmission, pixelRatio plafonné à 2. Particules instanciées (nombre d'appels fixe).
 - **detect-gpu 5.0.70** hébergé (`detect-gpu-benchmarks/`) : palier ≤ 1 → pixelRatio 1, moins de particules, pas de poussière ni de faisceau. `?tier=2` force le mode normal.
 - `?fps=1` : compteur (fps, appels, triangles, palier, GPU).
 - **Service worker** maison : réseau d'abord pour HTML/JS/CSS, cache pour `vendor/` ; anciens caches supprimés à chaque version.
-- **Bombe procédurale prête pour un GLB** : mêmes noms de nœuds que le futur modèle — `Bomb_Case`, `Bomb_Lid` (origine sur la charnière, détachable), `Bomb_Dynamite`, `Bomb_LED` (matériau `LED_Screen`, UV 0–1, chiffres dessinés par CanvasTexture), `Wire_<Couleur>` + `Wire_<Couleur>_CutA/_CutB`, ancres `Mount_Front/Back/Left/Right/Top/Bottom`. Remplacer par le GLB = changer le chargeur (`loadBombGLB` dans `js/bomb-model.js`, pas encore branché).
+- **Bombe procédurale prête pour un GLB** : mêmes noms de nœuds que le futur modèle — `Bomb_Case`, `Bomb_Lid` (origine sur la charnière, détachable), `Bomb_Dynamite`, `Bomb_LED` (matériau `LED_Screen`, UV 0–1, chiffres dessinés par CanvasTexture), `Wire_<Couleur>` + `Wire_<Couleur>_CutA/_CutB`, ancres `Mount_Front/Back/Left/Right/Top/Bottom`. Calé sur le .blend de Modélisation (boîtier 0,405 × 0,405 × 0,5225 m → échelle ×5, −1,3 en Y ; écran DEL 2:1, texture 384 × 192 ; charnière du couvercle avec butée à 110°, puis il se détache ; ancres `Mount_*` avec +Z local vers l'extérieur). Remplacer par le GLB = changer le chargeur (`loadBombGLB` dans `js/bomb-model.js`, pas encore branché).
 
 ## Ressources et licences
 - three.js 0.187.0 — MIT. detect-gpu 5.0.70 — MIT. qrcode-generator 2.0.4 (Kazuhiko Arase) — MIT. Copies dans `vendor/` avec leurs licences.
 - Modèle 3D, textures (canvas) et sons (WebAudio) : faits par le jeu, procéduraux.
 - Prévu (prochaine version, écran Crédits déjà prêt) : « Time Bomb » par st4ng et « Explosive Case » par kris vidotto (Sketchfab, CC BY 4.0).
 
-## État (v0.3.0, 2026-11-16)
+## État (v0.3.1, 2026-11-16)
 - Jouable de bout en bout dans les 3 niveaux, en solo et en duo. 5000 bombes × 3 niveaux vérifiées solubles (solo, et duo bombe + manuel) ; toutes les fautes de frappe d'un caractère dans un code sont détectées.
 - Test tactile complet (vrais événements tactiles CDP) en 412×915 et 915×412 : 70 vérifications, 0 erreur console.
 - Pas encore testé sur un vrai téléphone (les fps mesurés sur la machine de test ne sont pas ceux d'un S20).

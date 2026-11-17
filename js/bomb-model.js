@@ -16,6 +16,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 export const DIMS = { BW: 2, BH: 2.6, BD: 2 };
 export const MOUNTS = ['Mount_Front', 'Mount_Right', 'Mount_Back', 'Mount_Left', 'Mount_Top', 'Mount_Bottom'];
 const HALF = Math.PI / 2;
+const LID_STOP = 110 * Math.PI / 180; // butée de la charnière du couvercle (même valeur que le .blend)
+// Modèle GLB (Modélisation, 2026-11-16) : boîtier 0,405 x 0,405 x 0,5225 m → x5 et -1,3 en Y pour coïncider avec la bombe procédurale.
+export const GLB_FIT = { scale: 5, y: -1.3 };
 
 // Noms de couleur anglais pour les nœuds du GLB (Wire_Red, Wire_Red_CutA…)
 const EN = { rouge: 'Red', bleu: 'Blue', jaune: 'Yellow', vert: 'Green', blanc: 'White', mauve: 'Purple' };
@@ -36,20 +39,20 @@ function brushedTexture() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
 }
 
-// Écran DEL du chrono (nœud Bomb_LED, matériau LED_Screen). Canvas 384 x 128.
+// Écran DEL du chrono (nœud Bomb_LED, matériau LED_Screen). Canvas 384 x 192 (rapport 2:1, comme l'écran du modèle GLB : 0,1106 x 0,0554 m).
 export function makeLedScreen() {
-  const canvas = document.createElement('canvas'); canvas.width = 384; canvas.height = 128;
+  const canvas = document.createElement('canvas'); canvas.width = 384; canvas.height = 192;
   const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }); mat.name = 'LED_Screen';
   let last = '';
   function draw(text, sub, color) {
     const key = text + '|' + sub + '|' + color; if (key === last) return; last = key;
     const x = canvas.getContext('2d');
-    x.fillStyle = '#060201'; x.fillRect(0, 0, 384, 128);
-    x.font = 'bold 84px "Courier New", monospace'; x.textAlign = 'center'; x.textBaseline = 'middle';
-    x.fillStyle = 'rgba(255,60,40,.08)'; x.fillText('8:88', 192, 56);          // segments éteints
-    x.shadowColor = color; x.shadowBlur = 18; x.fillStyle = color; x.fillText(text, 192, 56); x.shadowBlur = 0;
-    x.font = 'bold 20px "Courier New", monospace'; x.fillStyle = '#ffb300'; x.fillText(sub, 192, 112);
+    x.fillStyle = '#060201'; x.fillRect(0, 0, 384, 192);
+    x.font = 'bold 116px "Courier New", monospace'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillStyle = 'rgba(255,60,40,.08)'; x.fillText('8:88', 192, 84);          // segments éteints
+    x.shadowColor = color; x.shadowBlur = 18; x.fillStyle = color; x.fillText(text, 192, 84); x.shadowBlur = 0;
+    x.font = 'bold 26px "Courier New", monospace'; x.fillStyle = '#ffb300'; x.fillText(sub, 192, 164);
     tex.needsUpdate = true;
   }
   return { canvas, tex, mat, draw };
@@ -112,9 +115,9 @@ export function buildProceduralBomb({ faceMats, envLow }) {
   // Bomb_LED : écran du chrono, en saillie sur le dessus (zone haute de la face du dessus)
   const led = makeLedScreen();
   const ledGroup = new THREE.Group(); ledGroup.name = 'Bomb_LED_Mount';
-  const bezel = new THREE.Mesh(new RoundedBoxGeometry(1.6, 0.5, 0.08, 2, 0.03), new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.5, metalness: 0.6 }));
+  const bezel = new THREE.Mesh(new RoundedBoxGeometry(1.2, 0.62, 0.08, 2, 0.03), new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.5, metalness: 0.6 }));
   bezel.name = 'Bomb_LED_Bezel';
-  const ledMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.44, 0.42), led.mat); ledMesh.name = 'Bomb_LED'; ledMesh.position.z = 0.041;
+  const ledMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.04, 0.52), led.mat); ledMesh.name = 'Bomb_LED'; ledMesh.position.z = 0.041;
   ledGroup.add(bezel, ledMesh);
   // posé sur Mount_Top (son repère pivote avec la face, donc l'écran reste lisible avec elle)
   ledGroup.position.set(0, 0.62, 0.04);
@@ -207,8 +210,8 @@ export function buildLid(plane, rect, screws, toLocalXY, lidTex) {
     });
     if (dirty) writeScrews();
     if (state.phase === 'swing') { // pivote sur la charnière, vers le haut et l'extérieur
-      state.t += s; lid.rotation.x = -Math.min(1.25, state.t * state.t * 9);
-      if (state.t > 0.42) { // se détache : passe dans le repère du monde
+      state.t += s; lid.rotation.x = -Math.min(LID_STOP, state.t * state.t * 9);
+      if (state.t > 0.5) { // butée à 110°, puis se détache : passe dans le repère du monde
         scene.attach(lid); state.phase = 'fall';
         const n = new THREE.Vector3(0, 0, 1).transformDirection(plane.matrixWorld);
         state.v.copy(n).multiplyScalar(2.2); state.v.y += 2.4;
@@ -243,6 +246,7 @@ export async function loadBombGLB(url, renderer) {
   const ktx2 = new KTX2Loader().setTranscoderPath(base).detectSupport(renderer);
   const gltf = await new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder).loadAsync(url);
   const scene = gltf.scene, find = n => scene.getObjectByName(n) || null;
+  scene.scale.setScalar(GLB_FIT.scale); scene.position.y = GLB_FIT.y; // Mount_* : +Z local vers l'extérieur, comme les faces procédurales
   return {
     root: scene, caseMesh: find('Bomb_Case'), lid: find('Bomb_Lid'), dynamite: find('Bomb_Dynamite'),
     ledMesh: find('Bomb_LED'), mounts: Object.fromEntries(MOUNTS.map(n => [n, find(n)])),

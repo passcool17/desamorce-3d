@@ -42,8 +42,8 @@ for (const [W, H] of [[412, 915], [915, 412]]) {
   ok(await ev('D3.G.strikes') === 1, `${tag} mauvais fil → 1 erreur`);
   for (const i of p.solution.wiresToCut) await tapFace(0, 200, wy(i));
   ok(await ev('D3.G.solved.fils'), `${tag} fils désamorcés au toucher`);
-  await sleep(1300);
-  const hang = await ev('D3.wires()');
+  let hang = [];
+  for (let i = 0; i < 40; i++) { await sleep(100); hang = await ev('D3.wires()'); if (i >= 12 && hang.every(w => w.a < -1.2 && w.b > 1.2)) break; } // ressort amorti : attendre qu'il se pose
   ok(hang.length === 3 && hang.every(w => w.a < -1.2 && w.b > 1.2), `${tag} fils coupés qui pendent : ${JSON.stringify(hang)}`);
   await page.shot(`${out}/${tag}-02-face-fils-coupes.png`); await measure('front');
   // glisser à gauche = la face de droite arrive (la bombe suit le doigt)
@@ -85,8 +85,8 @@ for (const [W, H] of [[412, 915], [915, 412]]) {
   await sleep(700);
   const lidMid = await ev('D3.lid()');
   ok(['swing', 'fall', 'rest'].includes(lidMid.phase), `${tag} 4 vis → le couvercle se détache (${lidMid.phase})`);
-  await sleep(1500);
-  const lidEnd = await ev('D3.lid()');
+  let lidEnd = {};
+  for (let i = 0; i < 50; i++) { await sleep(100); lidEnd = await ev('D3.lid()'); if (lidEnd.phase === 'rest') break; } // l'animation ralentit si le rendu est lent
   ok(await ev('D3.G.solved.panneau') && lidEnd.phase === 'rest' && lidEnd.y < -1, `${tag} couvercle posé sur la table (y ${lidEnd.y}), panneau désamorcé`);
   await page.shot(`${out}/${tag}-07-panneau-ouvert.png`);
   await tapEl('#right'); await settle();
@@ -138,8 +138,8 @@ for (const [W, H] of [[412, 915], [915, 412]]) {
   await tapEl('#bDown'); await settle(); await tapEl('#bDown'); await settle();
   ok(await ev('D3.view()') === 'bottom', `${tag} Facile : dessous (étiquette)`); await page.shot(`${out}/${tag}-16-facile-dessous.png`);
   // manuel : même code → mêmes indices
-  await page.goto(q(url.replace(/\/?$/, '/'), 'x=1').replace('?x=1', 'manuel.html?code=' + encodeURIComponent(p3.bombCode) + '&nosw=1'), { wait: false });
-  await sleep(600);
+  await page.goto(new URL('manuel.html?code=' + encodeURIComponent(p3.bombCode) + '&nosw=1', url).href, { wait: false });
+  for (let i = 0; i < 100 && !(await ev(`!!document.querySelector('.mod')`).catch(() => false)); i++) await sleep(100);
   const man = await ev(`({code: document.getElementById('code').value, n: document.querySelectorAll('.mod').length, maze: !!document.querySelector('svg.maze'), lit: [...document.querySelectorAll('.big .dot')].length})`);
   ok(man.code === p3.bombCode && man.n === 4 && man.maze && man.lit === 2, `${tag} manuel ${man.code} : ${man.n} modules, carte du labyrinthe, 2 voyants allumés`);
   await page.shot(`${out}/${tag}-17-manuel.png`);
