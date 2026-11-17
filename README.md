@@ -1,20 +1,24 @@
 # Désamorce! 3D
 
-Version 3D de *Désamorce!* : une bombe en 3D que tu tournes au doigt, en mode portrait. Tout est fictif.
+Version 3D de *Désamorce!* : une bombe fictive en 3D, six faces, trois niveaux et un mode à deux. Tout est fictif.
 Projet distinct de la version 2D ([passcool17/desamorce](https://github.com/passcool17/desamorce)), qui reste inchangée.
 
-**Jouer :** https://passcool17.github.io/desamorce-3d/
+**Jouer :** https://passcool17.github.io/desamorce-3d/ — **Manuel :** https://passcool17.github.io/desamorce-3d/manuel.html
 
-- Three.js r149 (CDN jsdelivr, build UMD) + JavaScript simple, aucune étape de build.
-- `logic.js` : génération des énigmes (copie de la version 2D : solution d'abord, indices ensuite).
-- `game3d.js` : scène 3D, modules dessinés sur des textures canvas et touchés par raycast, sons WebAudio.
-- `index.html` / `style.css` : HUD (chrono, erreurs, navigation) et écrans titre/fin en HTML.
+- `logic.js` : génération des bombes (seed 20 bits → code `N-XXXXC`), niveaux, solveur, manuel du mode duo.
+- `js/main.js` : scène, gestes, HUD, écrans ; `js/bomb-model.js` : bombe procédurale (noms de nœuds du futur GLB) ; `js/faces.js` : faces dessinées sur canvas ; `js/fx.js` : particules instanciées ; `js/audio.js` : sons WebAudio.
+- `manuel.html` + `js/manual.js` : manuel du lecteur, calculé à partir du code (hors ligne).
+- `vendor/` : three.js 0.187.0, detect-gpu 5.0.70, qrcode-generator 2.0.4, régénérés par `tools/build-vendor.sh`. Aucun CDN.
+- `sw.js` : service worker (réseau d'abord pour HTML/JS/CSS).
 
 ## Tests
 
 ```sh
-node test/logic.test.js                                          # 5000 bombes, toutes solubles à partir des indices affichés
-node test/e2e-cdp.mjs https://passcool17.github.io/desamorce-3d/ /tmp   # partie complète dans Chrome headless (WebGL) + captures
+node test/logic.test.js                      # 5000 bombes × 3 niveaux, solo et duo, codes
+node test/e2e-touch.mjs                      # partie complète au toucher (CDP) en 412x915 et 915x412, serveur local
+node test/e2e-touch.mjs https://passcool17.github.io/desamorce-3d/ ./captures   # même chose sur le site publié
 ```
 
-Concept, contrôles et prochaines idées : [GAME.md](GAME.md).
+Paramètres d'URL : `?fps=1` (compteur), `?tier=0..3` (forcer le palier GPU), `?nosw=1` (sans service worker), `?autostart=1&seed=N`.
+
+Concept, contrôles, licences et prochaines étapes : [GAME.md](GAME.md).

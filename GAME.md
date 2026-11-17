@@ -1,26 +1,39 @@
 # Désamorce! 3D — fiche du jeu
 
+**Jouer :** https://passcool17.github.io/desamorce-3d/ · **Manuel (mode duo) :** https://passcool17.github.io/desamorce-3d/manuel.html
+
 ## Concept
-Une bombe en 3D, un chrono de **5:00**. Tu fais tourner la bombe pour voir ses **4 faces**, chacune avec un module. Les indices de chaque module sont sur les **autres** faces, comme dans une puzzle box. Chaque partie génère une nouvelle bombe (même moteur d'énigmes que la version 2D).
+Une bombe fictive en 3D : un boîtier métallique avec des bâtons de dynamite, un écran DEL et un couvercle à loquet. Tu la tournes au doigt pour voir ses **4 côtés**, et tu la **bascules** pour voir le **dessus** et le **dessous** : **6 faces**. Les indices de chaque module sont sur une **autre** face (comme une boîte à énigmes). Chaque partie génère une nouvelle bombe, identifiée par un **code** (ex. `N-7K4QZ`).
 
 | Face | Module | Indice nécessaire (et où il est) |
 |---|---|---|
-| 1 — Fils | Couper les fils dont la couleur correspond à un voyant **allumé** | Voyants : face 3 |
-| 2 — Clavier | Code à 4 chiffres | Symboles sous le panneau (face 3) + légende symbole→chiffre (débloquée par l'aiguille, face 4) |
-| 3 — Panneau | Dévisser les 4 vis dans le bon ordre | Chiffres du n° de série : face 1 |
-| 4 — Aiguille | Guider la bille dans un labyrinthe **8×8 dans le noir** jusqu'au drapeau sans toucher un mur | — (récompense : la légende) |
+| 1 — Fils | Couper les fils dont la couleur est celle d'un voyant **allumé** (les fils coupés pendent) | Voyants : face 3 |
+| 2 — Clavier | Code à 4 chiffres | 4 symboles sous le couvercle (face 3) + légende (récompense de l'Aiguille, face 4) |
+| 3 — Panneau | Dévisser les 4 vis dans l'ordre ; le couvercle se détache et tombe sur la table | Chiffres du n° de série : face 1 |
+| 4 — Aiguille | Guider la bille dans un labyrinthe dans le noir jusqu'au drapeau | — (récompense : la légende) |
+| Dessus — Interrupteurs | Lever les interrupteurs dont la somme des valeurs = TENSION, puis VALIDER | TENSION : dessous |
+| Dessous — Séquence | Des couleurs clignotent ; appuyer dans l'ordre la couleur donnée par la table | Table de correspondance : dessus |
 
-## Règles
-- Chaque erreur (mauvais fil, mauvaise vis, mauvais code, mur touché) : **−30 s** et une croix (vibration si le téléphone le permet).
-- **3 erreurs** ou chrono à zéro : **BOUM** (explosion 3D).
-- Les 4 modules résolus : victoire, avec le temps restant.
+## Niveaux (choisis au menu, mémorisés)
+| Niveau | Modules | Chrono | Erreurs permises | Pénalité | Aiguille |
+|---|---|---|---|---|---|
+| Facile | 4 (côtés seulement) | 6:00 | 3 (la 4e = BOUM) | −20 s | 6×6, grand halo, pas de panne |
+| Normal | 6 | 6:00 | 2 (la 3e = BOUM) | −30 s | 8×8, panne de lumière ~5 s, séquence de 4 |
+| Difficile | 6, avec 6 fils | 5:00 | 1 (la 2e = BOUM) | −45 s | 8×8, petit halo, panne ~4 s, séquence de 5 |
 
-## Face Aiguille (v1.2 — plus difficile)
-- Labyrinthe **8×8** généré par backtracking récursif : longs culs-de-sac, un seul chemin, toujours soluble (5000 bombes vérifiées ; de 14 à 60 déplacements, médiane 26).
-- **Dans le noir** : seul un petit halo autour de la bille montre les murs ; le drapeau reste visible et pulse. Toutes les ~5 s, **panne de lumière** : les murs disparaissent ~0,75 s (la lumière grésille juste avant).
-- **Bombe instable** : sur cette face, elle oscille et penche sans arrêt. Chaque déplacement la fait pencher dans la direction du mouvement, puis elle se replace avec un effet ressort. Un mur touché donne une grosse secousse, un flash rouge sur le labyrinthe, un bourdonnement et −30 s.
-- La bille a de l'élan : elle glisse et se pose dans chaque case (ressort amorti), elle s'étire en vitesse et rebondit sur les murs.
-- Contrôles : grosse croix directionnelle, ou **glisser sur le labyrinthe** (une case tous les ~34 px). Glisser sur le labyrinthe ne tourne jamais la bombe ; pour tourner, glisse ailleurs ou utilise ◀ ▶.
+Meilleur temps et étoiles mémorisés par niveau (et à part pour le duo).
+
+## Mode duo (deux téléphones, sans serveur)
+- Le **désamorceur** choisit « Duo » au menu. Avant le chrono, un écran montre le **code de la bombe**, un **code QR** et le lien court `manuel.html?code=…`. GO démarre le chrono.
+- Le **lecteur** ouvre le manuel sur son téléphone (QR, lien, ou `manuel.html` + taper le code). Le manuel recalcule la bombe à partir du code : il marche hors ligne. Une faute de frappe dans le code est détectée (caractère de contrôle).
+- En duo, certains indices ne sont **que dans le manuel** : voyants allumés, légende du clavier, valeur cible des interrupteurs, table de la séquence, et la **carte du labyrinthe** (le désamorceur est dans le noir). Le code reste affiché en haut (puce 📖, toucher = QR).
+
+## Contrôles
+- **Glisser à gauche/droite** : la bombe tourne et suit le doigt. **Glisser vers le bas** : voir le dessus ; **vers le haut** : voir le dessous (et l'inverse pour revenir).
+- Boutons **◀ ▶** et **▲ Dessus / ▼ Dessous** en bas (à droite en paysage).
+- **Toucher** les éléments de la face visible : fils, vis, touches, interrupteurs, boutons de couleur, croix de l'aiguille. Glisser sur le labyrinthe déplace la bille (une case tous les ~34 px) sans tourner la bombe.
+- Clavier d'ordinateur : flèches pour tourner/basculer (sur l'Aiguille, les flèches bougent la bille ; Maj + flèches pour tourner), **M** pour le son.
+- Portrait et paysage pris en charge.
 
 ## Son (v1.2 — plus de pression, sans irriter)
 - Tout est synthétisé en WebAudio, sans fichier. Chaîne maître : passe-bas à 4 kHz (rien de perçant) → compresseur/limiteur.
@@ -36,18 +49,25 @@ Une bombe en 3D, un chrono de **5:00**. Tu fais tourner la bombe pour voir ses *
 - **Étoiles :** ★★★ sans erreur et ≥ 2:30 restantes ; ★★ au plus 1 erreur et ≥ 1:00 ; sinon ★.
 - **Mouvement réduit** (`prefers-reduced-motion`) : version allégée, sans secousse ni orbite, moins de particules, plus courte.
 
-## Contrôles
-- **Glisser** à gauche/droite sur la bombe : elle tourne en 3D et s'aligne sur la face suivante. Boutons **◀ ▶** en bas (flèches du clavier sur ordinateur).
-- **Toucher** directement les éléments sur la face visible : fils, vis, touches (EFF efface, OK valide), croix directionnelle de l'aiguille (↑ ↓ au clavier).
+## Technique
+- **three.js 0.187.0** hébergé avec le jeu (`vendor/`, aucun CDN, décodeurs KTX2/Draco/meshopt locaux pour le futur modèle GLB). Modules ES + importmap, URL versionnées `?v=0.3.0`.
+- Budget téléphone (Galaxy S20) : < 100 appels de dessin dans toutes les vues (29 à 43 mesurés), ~5 k triangles, aucune ombre dynamique (ombre portée simulée), pas de transmission, pixelRatio plafonné à 2. Particules instanciées (nombre d'appels fixe).
+- **detect-gpu 5.0.70** hébergé (`detect-gpu-benchmarks/`) : palier ≤ 1 → pixelRatio 1, moins de particules, pas de poussière ni de faisceau. `?tier=2` force le mode normal.
+- `?fps=1` : compteur (fps, appels, triangles, palier, GPU).
+- **Service worker** maison : réseau d'abord pour HTML/JS/CSS, cache pour `vendor/` ; anciens caches supprimés à chaque version.
+- **Bombe procédurale prête pour un GLB** : mêmes noms de nœuds que le futur modèle — `Bomb_Case`, `Bomb_Lid` (origine sur la charnière, détachable), `Bomb_Dynamite`, `Bomb_LED` (matériau `LED_Screen`, UV 0–1, chiffres dessinés par CanvasTexture), `Wire_<Couleur>` + `Wire_<Couleur>_CutA/_CutB`, ancres `Mount_Front/Back/Left/Right/Top/Bottom`. Remplacer par le GLB = changer le chargeur (`loadBombGLB` dans `js/bomb-model.js`, pas encore branché).
 
-## État (v1.2, 2026-11-09 — aiguille difficile + son de tension)
-- Jouable de bout en bout, toujours soluble (5000 bombes vérifiées).
-- Partie complète testée automatiquement dans Chrome headless avec WebGL (vrais clics projetés sur la bombe 3D, glissement compris) : aiguille résolue à la croix (plus un glisser sur le labyrinthe et un mur touché), victoire et défaite avec cinématiques jusqu’à l’écran de résultat, toucher pour passer, mouvement réduit.
-- Graphismes procéduraux (boîte, montants métalliques, câbles, textures dessinées), sons synthétisés.
-- Pas encore testé sur un vrai téléphone.
+## Ressources et licences
+- three.js 0.187.0 — MIT. detect-gpu 5.0.70 — MIT. qrcode-generator 2.0.4 (Kazuhiko Arase) — MIT. Copies dans `vendor/` avec leurs licences.
+- Modèle 3D, textures (canvas) et sons (WebAudio) : faits par le jeu, procéduraux.
+- Prévu (prochaine version, écran Crédits déjà prêt) : « Time Bomb » par st4ng et « Explosive Case » par kris vidotto (Sketchfab, CC BY 4.0).
 
-## Prochaines idées
-- Modèle 3D plus détaillé et visuels Créa (textures métal, bâtons, écran LED).
-- Faire basculer la bombe pour voir le dessus et le dessous (modules supplémentaires).
-- Couvercle du panneau qui se détache en 3D, fils qui pendent après la coupe.
-- Niveaux de difficulté, meilleurs temps, mode à deux (un lit le manuel, l'autre désamorce).
+## État (v0.3.0, 2026-11-16)
+- Jouable de bout en bout dans les 3 niveaux, en solo et en duo. 5000 bombes × 3 niveaux vérifiées solubles (solo, et duo bombe + manuel) ; toutes les fautes de frappe d'un caractère dans un code sont détectées.
+- Test tactile complet (vrais événements tactiles CDP) en 412×915 et 915×412 : 70 vérifications, 0 erreur console.
+- Pas encore testé sur un vrai téléphone (les fps mesurés sur la machine de test ne sont pas ceux d'un S20).
+
+## Prochaines étapes
+- Brancher le modèle GLB (st4ng / kris vidotto) avec le contrat de noms ci-dessus, compressé (meshopt + KTX2).
+- Essai sur un vrai Galaxy S20 (fps, chaleur, lisibilité des faces).
+- Imprimer le manuel en PDF ; mode duo sur un seul appareil (manuel en plein écran à tour de rôle).

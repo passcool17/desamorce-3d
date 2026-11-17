@@ -122,3 +122,4 @@ button.big { background: linear-gradient(#c62828, #8e1515); border-color: #ff8a8
   #end.lose, #end.lose h1, #end.win h1, #stars span { animation: none; }
   #timer.frozen, #timer.urgent { animation: none; }
 }
+#brief, #how, #credits { background: rgba(6,7,9,.94); }
