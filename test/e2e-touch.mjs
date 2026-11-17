@@ -138,7 +138,7 @@ for (const [W, H] of [[412, 915], [915, 412]]) {
   await tapEl('#bDown'); await settle(); await tapEl('#bDown'); await settle();
   ok(await ev('D3.view()') === 'bottom', `${tag} Facile : dessous (étiquette)`); await page.shot(`${out}/${tag}-16-facile-dessous.png`);
   // manuel : même code → mêmes indices
-  await page.goto(q(url.replace(/\/?$/, '/'), 'x=1').replace('?x=1', 'manuel.html?code=' + encodeURIComponent(p3.bombCode) + '&nosw=1'));
+  await page.goto(q(url.replace(/\/?$/, '/'), 'x=1').replace('?x=1', 'manuel.html?code=' + encodeURIComponent(p3.bombCode) + '&nosw=1'), { wait: false });
   await sleep(600);
   const man = await ev(`({code: document.getElementById('code').value, n: document.querySelectorAll('.mod').length, maze: !!document.querySelector('svg.maze'), lit: [...document.querySelectorAll('.big .dot')].length})`);
   ok(man.code === p3.bombCode && man.n === 4 && man.maze && man.lit === 2, `${tag} manuel ${man.code} : ${man.n} modules, carte du labyrinthe, 2 voyants allumés`);
